@@ -38,17 +38,15 @@ public class CoTaskScheduler : TaskScheduler
 
     protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued)
     {
-        // // 在单线程Scheduler中，要确保当前线程是本Scheduler中的线程，才执行任务
-        // bool isCurrentThread = Thread.CurrentThread == _worker;
-        // if (!isCurrentThread)
-        // {
-        //     //表示，当前Scheduler不处理该任务，请将任务加入队列中
-        //     return false;
-        //     // throw new InvalidOperationException($"尝试在错误线程({Thread.CurrentThread.ManagedThreadId})上执行任务，应该在线程{_worker.ManagedThreadId}上执行");
-        // }
-        //
-        // //内联执行任务
-        // return TryExecuteTask(task);
-        return Thread.CurrentThread == _worker && TryExecuteTask(task);
+        // 在单线程Scheduler中，要确保当前线程是本Scheduler中的线程，才执行任务
+        bool isCurrentThread = Thread.CurrentThread == _worker;
+        if (isCurrentThread)
+        {
+            //内联执行任务
+            return TryExecuteTask(task);
+        }
+
+        //表示，当前Scheduler不处理该任务，请将任务加入队列中
+        return false;
     }
 }

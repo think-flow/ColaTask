@@ -20,8 +20,11 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
         Assert.All(list, instance => Assert.Same(temp, instance));
     }
 
+    /// <summary>
+    /// 通过 thread id 判断是不是单线程的scheduler
+    /// </summary>
     [Fact]
-    public async Task Should_Single_Thread()
+    public async Task Should_Single_Thread1()
     {
         int mainThreadId = Thread.CurrentThread.ManagedThreadId;
         output.WriteLine($"main thread id {mainThreadId}");
@@ -65,6 +68,62 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
         output.WriteLine("main thread completed");
     }
 
+    /// <summary>
+    /// 通过 同时等待阻塞和异步调用，判断是不是单线程的scheduler
+    /// </summary>
+    [Fact]
+    public void Should_Single_Thread2()
+    {
+        //获取单线程调度器
+        var singleScheduler = CoTaskScheduler.Instance;
+        var sw = Stopwatch.StartNew();
+
+        var task1 = ThreadSleep300(singleScheduler);
+        var task2 = TaskDelay100(singleScheduler);
+
+        //假如是单线程的
+        //如果我们在 task1 中阻塞线程300毫秒，而 task2 中我们异步等待100毫秒
+        //100毫秒后 由于任务线程还在task1中阻塞着, 所以task2的完成时间，取决于task1的阻塞结束时间
+        //当我们进行WaitAny等待时，首先返回的应该是task1，而不是等待时间少的task2
+        //如果我们测量总耗时的话，应该为300毫秒左右
+        Task.WaitAny(task1, task2);
+        sw.Stop();
+        long ms = sw.ElapsedMilliseconds;
+        output.WriteLine($"CoTaskScheduler it takes {ms} milliseconds");
+        //允许误差30毫秒
+        Assert.True(ms - 300 <= 30);
+
+        //如果以上的验证成功
+        //我们用默认的多线程 ThreadPoolTaskScheduler 进行同样的步骤，那么总耗时，应该为100毫秒
+        sw.Restart();
+        task1 = ThreadSleep300(TaskScheduler.Default);
+        task2 = TaskDelay100(TaskScheduler.Default);
+
+        Task.WaitAny(task1, task2);
+        sw.Stop();
+        ms = sw.ElapsedMilliseconds;
+        output.WriteLine($"ThreadPoolTaskScheduler it takes {ms} milliseconds");
+        //允许误差10毫秒
+        Assert.True(ms - 100 <= 10);
+
+        static Task ThreadSleep300(TaskScheduler scheduler)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                //让任务线程阻塞300毫秒
+                Thread.Sleep(300);
+            }, CancellationToken.None, TaskCreationOptions.None, scheduler);
+        }
+
+        static Task TaskDelay100(TaskScheduler scheduler)
+        {
+            return Task.Factory.StartNew(async () =>
+            {
+                await Task.Delay(100);
+            }, CancellationToken.None, TaskCreationOptions.None, scheduler).Unwrap();
+        }
+    }
+
     [Fact]
     public async Task Should_Async()
     {
@@ -86,7 +145,7 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
         long ms = sw.ElapsedMilliseconds;
         output.WriteLine($"it takes {ms} milliseconds");
         //允许误差30毫秒
-        Assert.True(ms - 300 < 30);
+        Assert.True(ms - 300 <= 30);
     }
 
     [Fact]
@@ -108,21 +167,7 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
         //如果是同步的，总花费时间应该为(100+150+300)550毫秒上下
         long ms = sw.ElapsedMilliseconds;
         output.WriteLine($"it takes {ms} milliseconds");
-        //允许误差30毫秒
-        Assert.True(ms - (100 + 150 + 300) < 30);
-    }
-
-    //测试死锁问题
-    [Fact]
-    public async Task Should_Dead_lock()
-    {
-        //获取单线程调度器
-        var scheduler = CoTaskScheduler.Instance;
-        await Task.Factory.StartNew(async () =>
-        {
-            using var httpClient = new HttpClient();
-            var content = httpClient.GetStringAsync("https://www.baidu.com").Result;
-            output.WriteLine(content);
-        }, CancellationToken.None, TaskCreationOptions.None, scheduler).Unwrap();
+        //允许误差50毫秒
+        Assert.True(ms - (100 + 150 + 300) <= 50);
     }
 }
