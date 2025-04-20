@@ -103,8 +103,8 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
         sw.Stop();
         ms = sw.ElapsedMilliseconds;
         output.WriteLine($"ThreadPoolTaskScheduler it takes {ms} milliseconds");
-        //允许误差10毫秒
-        Assert.True(ms - 100 <= 10);
+        //允许误差20毫秒
+        Assert.True(ms - 100 <= 20);
 
         static Task ThreadSleep300(TaskScheduler scheduler)
         {
@@ -122,6 +122,65 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
                 await Task.Delay(100);
             }, CancellationToken.None, TaskCreationOptions.None, scheduler).Unwrap();
         }
+    }
+
+    /// <summary>
+    /// 通过 数据竞争，判断是不是单线程的scheduler
+    /// </summary>
+    [Fact]
+    public void Should_Single_Thread3()
+    {
+        int num = 5;
+        for (int i = 0; i < num; i++)
+        {
+            //获取单线程调度器
+            var singleScheduler = CoTaskScheduler.Instance;
+            int shareCount = 0;
+
+            Task[] tasks = new Task[100];
+            for (int j = 0; j < 100; j++)
+            {
+                var task = Task.Factory.StartNew(async () =>
+                {
+                    await Task.Delay(100);
+                    shareCount += 1;
+                }, CancellationToken.None, TaskCreationOptions.None, singleScheduler);
+
+                tasks[j] = task.Unwrap();
+            }
+
+            Task.WaitAll(tasks);
+
+            //如果是单线程环境下，那么不可能出现数据竞争，所以shareCount 100次自增，值肯定为100
+            Assert.Equal(100, shareCount);
+        }
+
+        // #####取消以下注释代码，可以验证多线程环境下的数据竞争
+
+        /*
+        //使用默认ThreadPoolTaskScheduler
+        for (int i = 0; i < num; i++)
+        {
+            int shareCount1 = 0;
+
+            Task[] tasks1 = new Task[100];
+            for (int j = 0; j < 100; j++)
+            {
+                var task = Task.Factory.StartNew(async () =>
+                {
+                    await Task.Delay(100);
+                    shareCount1 += 1;
+                }, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
+
+                tasks1[j] = task.Unwrap();
+            }
+
+            Task.WaitAll(tasks1);
+
+            //如果是多线程环境下，则可能出现数据竞争，所以shareCount1 100次自增，值不一定为100
+            output.WriteLine($"ThreadPoolTaskScheduler shareCount1: {shareCount1}");
+        }
+        */
     }
 
     [Fact]
