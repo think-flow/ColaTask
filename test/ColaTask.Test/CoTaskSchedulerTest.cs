@@ -44,11 +44,13 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
                 var timeout = Task.Delay(200);
                 await Task.WhenAny(timeout, response);
                 Assert.Equal(taskThreadId, Thread.CurrentThread.ManagedThreadId);
-
+                Assert.Equal(taskThreadId, await GetAsyncMethodInnerThreadIdAsync());
+                
                 if (response.IsCompleted)
                 {
                     string _ = await response.Result.Content.ReadAsStringAsync();
                     Assert.Equal(taskThreadId, Thread.CurrentThread.ManagedThreadId);
+                    Assert.Equal(taskThreadId, await GetAsyncMethodInnerThreadIdAsync());
                 }
             }
             catch
@@ -58,14 +60,23 @@ public class CoTaskSchedulerTest(ITestOutputHelper output)
 
             await Task.Delay(50);
             Assert.Equal(taskThreadId, Thread.CurrentThread.ManagedThreadId);
+            Assert.Equal(taskThreadId, await GetAsyncMethodInnerThreadIdAsync());
 
             await Task.Delay(100);
             Assert.Equal(taskThreadId, Thread.CurrentThread.ManagedThreadId);
+            Assert.Equal(taskThreadId, await GetAsyncMethodInnerThreadIdAsync());
 
             output.WriteLine("task thread completed");
         }, CancellationToken.None, TaskCreationOptions.None, scheduler).Unwrap();
 
         output.WriteLine("main thread completed");
+
+        async Task<int> GetAsyncMethodInnerThreadIdAsync()
+        {
+            int threadId = Thread.CurrentThread.ManagedThreadId;
+            await Task.Yield();
+            return threadId;
+        }
     }
 
     /// <summary>
